@@ -17,6 +17,7 @@
 # Questões:
 # (0,5) 1 - Quantas corridas estão com Status da Corrida como Completada ("Completed") no dataset? 
 
+ 
 import pandas as pd
 
 df = pd.read_csv('ncr_ride_bookings.csv')
@@ -37,7 +38,7 @@ print(f"Porcentagem: {proporcao * 100:.2f}%")
 # (0,5) 3 - Calcule a média da Distância ("Ride Distance") percorrida por cada Tipo de veículo.
 
 media_distancia = df.groupby('Vehicle Type')['Ride Distance'].mean()
-
+±
 print(media_distancia)
 
 # (0,5) 4 - Qual o Metodo de Pagamento ("Payment Method") mais utilizado pelas bicicletas ("Bike") ?
@@ -94,12 +95,12 @@ print(resultado[["SERCODIGO", "FNTSIGLA", "SERNOME"]])
 # Usando o código encontrado, acesse a API de valores: f"http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='{CODIGO_ENCONTRADO}')"
 # Construa um DataFrame através da chave 'value' do retorno da api
 # Selecione apenas as colunas datas (VALDATA) e os valores (VALVALOR).
-# Exiba a Data e o Valor que teve o valor maximo de vendas.
+# Exiba a Data e o Valor que teve o valor maximo de vendas. 
 
 import requests
 import pandas as pd
 
-CODIGO_ENCONTRADO = "FIPE12_VENBR12"
+CODIGO_ENCONTRADO = "FIPE12_VENBR12" 
 
 url = f"http://ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='{CODIGO_ENCONTRADO}')"
 

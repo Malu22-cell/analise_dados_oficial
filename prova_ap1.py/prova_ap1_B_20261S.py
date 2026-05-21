@@ -41,7 +41,7 @@ print(f"Quantidade de tickets cancelados: {tickets_cancelados}")
 conclusao_tickets = len(df)
 total = df['des_status'].sum()
 
-proporcao = conclusao_tickets/total
+proporcao = conclusao_tickets/total 
 
 print(f"Proporção: {proporcao}")
 print(f"Porcentagem: {proporcao * 100:.2f}%")
