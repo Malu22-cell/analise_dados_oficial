@@ -1,0 +1,683 @@
+import requests
+import pandas as pd
+
+base_url = "https://laboratoriodefinancas.com/api/v2"
+token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzgwMTQxNTM2LCJpYXQiOjE3Nzc1NDk1MzYsImp0aSI6ImEzMWM2OTIwNGM1NzQyYTQ4MDQ0YTIxMTZhOTQ1YjlmIiwidXNlcl9pZCI6IjEwNSJ9.qrmOvbFvtK1MTfhqHBlCQ0_e3mN8RFZrs8Zz344s4nw"
+
+# ============================================================
+# DOWNLOAD DOS BALANÇOS (2023, 2024, 2025)
+# ============================================================
+
+# Balanço de 2025
+params = {"ticker": "ALPA3", "ano_tri": "20254T"}
+resp = requests.get(
+    f"{base_url}/bolsa/balanco",
+    headers={"Authorization": f"Bearer {token}"},
+    params=params,
+)
+df_2025 = pd.DataFrame(resp.json()[0]['balanco'])
+
+# Balanço de 2024
+params = {"ticker": "ALPA3", "ano_tri": "20244T"}
+resp = requests.get(
+    f"{base_url}/bolsa/balanco",
+    headers={"Authorization": f"Bearer {token}"},
+    params=params,
+)
+df_2024 = pd.DataFrame(resp.json()[0]['balanco'])
+
+# Balanço de 2023 (necessário para médias dos indicadores de atividade)
+params = {"ticker": "ALPA3", "ano_tri": "20234T"}
+resp = requests.get(
+    f"{base_url}/bolsa/balanco",
+    headers={"Authorization": f"Bearer {token}"},
+    params=params,
+)
+df_2023 = pd.DataFrame(resp.json()[0]['balanco'])
+
+
+# ============================================================
+# Função para extrair todas as contas contábeis do balanço
+# ============================================================
+
+def encontrar_contas_contabeis(df):
+    # Ativo Circulante
+    ativo_circ = float(df[df["conta"]=='1.01']['valor'].iloc[0])
+
+    # Passivo Circulante
+    passivo_circ = float(df[df["conta"]=='2.01']['valor'].iloc[0])
+
+    # Passivo Não Circulante
+    passivo_n_circ = float(df[df["conta"]=='2.02']['valor'].iloc[0])
+
+    # Intangível (1.02.04)
+    filtro = df["descricao"].str.contains('intang.vel', case=False) & (df["conta"]=='1.02.04')
+    intangivel = float(df[filtro]['valor'].iloc[0])
+
+    # Imobilizado (1.02.03)
+    filtro = df["descricao"].str.contains('imobilizado', case=False) & df["conta"].str.contains('1.02.03', case=False)
+    imobilizado = float(df[filtro]['valor'].iloc[0])
+
+    # Investimento (1.02.02)
+    filtro = df["descricao"].str.contains('investimento', case=False) & df["conta"].str.contains('1.02.02', case=False)
+    investimento = float(df[filtro]['valor'].iloc[0])
+
+    # Realizável a Longo Prazo (1.02.01)
+    rlp = float(df[df["conta"]=='1.02.01']['valor'].iloc[0])
+
+    # Estoque
+    estoque = float(df[df["descricao"].str.contains('estoque', case=False)]['valor'].iloc[0])
+
+    # Despesa antecipada
+    filtro = df["descricao"].str.contains('despesa', case=False) & df["conta"].str.contains('1.01.07', case=False)
+    despesa_antecipada = float(df[filtro]['valor'].iloc[0])
+
+    # Caixa e equivalentes
+    filtro = df["descricao"].str.contains('caixa.*equivalentes', case=False) & df["conta"].str.contains('1.*', case=False)
+    caixa_equivalentes = float(df[filtro]['valor'].iloc[0])
+
+    # CMV (magnitude)
+    filtro = df["descricao"].str.contains('custo.*bens', case=False) & df["conta"].str.contains('3.*', case=False)
+    cmv = abs(float(df[filtro]['valor'].iloc[0]))
+
+    # PL (Patrimônio Líquido)
+    pl = float(df[df["conta"]=='2.03']['valor'].iloc[0])
+
+    # Ativo Total
+    ativo_total = float(df[df["conta"]=='1']['valor'].iloc[0])
+
+    # Passivo Total (PC + PNC)
+    passivo_total = passivo_circ + passivo_n_circ
+
+    # Contas a Receber
+    filtro = df["descricao"].str.contains('clientes|receb', case=False) & df["conta"].str.contains('1.01.03', case=False)
+    contas_receber = float(df[filtro]['valor'].iloc[0])
+
+    # Fornecedores (magnitude)
+    filtro = df["descricao"].str.contains('fornecedor', case=False) & df["conta"].str.contains('2.01.02', case=False)
+    fornecedores = abs(float(df[filtro]['valor'].iloc[0]))
+
+    # Dívida Financeira CP (2.01.04)
+    filtro = df["descricao"].str.contains('empr.stimo|financiamento', case=False) & df["conta"].str.contains('2.01.04', case=False)
+    divida_cp = abs(float(df[filtro]['valor'].iloc[0]))
+
+    # Dívida Financeira LP (2.02.01)
+    filtro = df["descricao"].str.contains('empr.stimo|financiamento', case=False) & df["conta"].str.contains('2.02.01', case=False)
+    divida_lp = abs(float(df[filtro]['valor'].iloc[0]))
+
+    # Receita Líquida (3.01)
+    receita_liquida = float(df[df["conta"]=='3.01']['valor'].iloc[0])
+
+    # Lucro Bruto (3.03)
+    lucro_bruto = float(df[df["conta"]=='3.03']['valor'].iloc[0])
+
+    # EBIT (3.05)
+    ebit = float(df[df["conta"]=='3.05']['valor'].iloc[0])
+
+    # LAIR / EBT (3.07) — Lucro Antes do IR
+    lair = float(df[df["conta"]=='3.07']['valor'].iloc[0])
+
+    # IR/CSLL Corrente (3.08.01)
+    ir_corrente = float(df[df["conta"]=='3.08.01']['valor'].iloc[0])
+
+    # Lucro Líquido (3.11)
+    lucro_liquido = float(df[df["conta"]=='3.11']['valor'].iloc[0])
+
+    # NOPAT = EBIT - IR/CSLL corrente
+    nopat = ebit - ir_corrente
+
+    # Despesa Financeira Bruta (3.06.02, magnitude)
+    despesa_financeira = abs(float(df[df["conta"]=='3.06.02']['valor'].iloc[0]))
+
+    # Depreciação & Amortização (DVA - conta 7.04.01, magnitude)
+    depreciacao_amortizacao = abs(float(df[df["conta"]=='7.04.01']['valor'].iloc[0]))
+
+    # EBITDA = EBIT + D&A
+    ebitda = ebit + depreciacao_amortizacao
+
+    return {
+        'ativo_circ': ativo_circ,
+        'passivo_circ': passivo_circ,
+        'passivo_n_circ': passivo_n_circ,
+        'intangivel': intangivel,
+        'imobilizado': imobilizado,
+        'investimento': investimento,
+        'rlp': rlp,
+        'estoque': estoque,
+        'despesa_antecipada': despesa_antecipada,
+        'caixa_equivalentes': caixa_equivalentes,
+        'cmv': cmv,
+        'pl': pl,
+        'ativo_total': ativo_total,
+        'passivo_total': passivo_total,
+        'contas_receber': contas_receber,
+        'fornecedores': fornecedores,
+        'divida_cp': divida_cp,
+        'divida_lp': divida_lp,
+        'receita_liquida': receita_liquida,
+        'lucro_bruto': lucro_bruto,
+        'ebit': ebit,
+        'lair': lair,
+        'ir_corrente': ir_corrente,
+        'nopat': nopat,
+        'lucro_liquido': lucro_liquido,
+        'despesa_financeira': despesa_financeira,
+        'depreciacao_amortizacao': depreciacao_amortizacao,
+        'ebitda': ebitda,
+    }
+
+
+dic_2023 = encontrar_contas_contabeis(df_2023)
+dic_2024 = encontrar_contas_contabeis(df_2024)
+dic_2025 = encontrar_contas_contabeis(df_2025)
+
+
+# ============================================================
+# DADOS DE MERCADO (Pegados por sites externos)
+#Puxar esses dados de mercados da planilha de cada um
+# ============================================================
+n_acoes = 683_062_222
+preco_atual = 10.55
+preco_inicio = 6.44
+dpa = 0.4918
+aliquota_estatutaria = 0.34
+rf = 0.15
+beta = 0.82
+erp = 0.065
+ke = rf + beta * erp  # Custo do Equity (CAPM) = 0.2033
+
+
+# ============================================================
+# Funções auxiliares de impressão
+# Tipos de formato (fmt):
+#   'cur'  → moeda com vírgula de milhar, 0 decimais
+#   'cur2' → moeda com vírgula de milhar, 2 decimais
+#   'dec'  → decimal com 2 casas
+#   'dec4' → decimal com 4 casas (alinha com o PDF)
+# ============================================================
+
+def _formatar(valor, fmt):
+    if fmt == 'cur':
+        return f"{valor:,.0f}"
+    elif fmt == 'cur2':
+        return f"{valor:,.2f}"
+    elif fmt == 'dec':
+        return f"{valor:.2f}"
+    elif fmt == 'dec4':
+        return f"{valor:.4f}"
+    return str(valor)
+
+
+def imprimir_tabela(titulo, ind_2025, ind_2024, nomes_formatos):
+    print(f"\n{'='*78}")
+    print(f"  {titulo}")
+    print(f"{'='*78}")
+    print(f"{'Indicador':<42} {'2025':>16} {'2024':>16}")
+    print("-" * 78)
+    for chave, (nome, fmt) in nomes_formatos.items():
+        v25 = _formatar(ind_2025[chave], fmt)
+        v24 = _formatar(ind_2024[chave], fmt)
+        print(f"{nome:<42} {v25:>16} {v24:>16}")
+
+
+def imprimir_tabela_unica(titulo, ind, nomes_formatos):
+    print(f"\n{'='*78}")
+    print(f"  {titulo}")
+    print(f"{'='*78}")
+    print(f"{'Indicador':<42} {'2025':>33}")
+    print("-" * 78)
+    for chave, (nome, fmt) in nomes_formatos.items():
+        v = _formatar(ind[chave], fmt)
+        print(f"{nome:<42} {v:>33}")
+
+
+# ============================================================
+# SEÇÃO 1 — INDICADORES DE LIQUIDEZ
+# ============================================================
+
+def calcular_liquidez(dic):
+    ativo_circ = dic['ativo_circ']
+    passivo_circ = dic['passivo_circ']
+    passivo_n_circ = dic['passivo_n_circ']
+    rlp = dic['rlp']
+    estoque = dic['estoque']
+    despesa_antecipada = dic['despesa_antecipada']
+    caixa_equivalentes = dic['caixa_equivalentes']
+
+    ccl = ativo_circ - passivo_circ
+    lc = ativo_circ / passivo_circ
+    ls = (ativo_circ - estoque - despesa_antecipada) / passivo_circ
+    la = caixa_equivalentes / passivo_circ
+    lg = (ativo_circ + rlp) / (passivo_circ + passivo_n_circ)
+
+    return {
+        'ccl': ccl,
+        'lc': lc,
+        'ls': ls,
+        'la': la,
+        'lg': lg,
+    }
+
+liq_2024 = calcular_liquidez(dic_2024)
+liq_2025 = calcular_liquidez(dic_2025)
+
+imprimir_tabela('SEÇÃO 1 — INDICADORES DE LIQUIDEZ', liq_2025, liq_2024, {
+    'ccl': ('Capital Circulante Líquido (CCL)', 'cur'),
+    'lc': ('Liquidez Corrente (AC/PC)', 'dec4'),
+    'ls': ('Liquidez Seca ((AC-Est-DA)/PC)', 'dec4'),
+    'la': ('Liquidez Absoluta (Caixa/PC)', 'dec4'),
+    'lg': ('Liquidez Geral ((AC+ARLP)/(PC+PNC))', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 2 — INDICADORES DE ATIVIDADE E CICLOS
+# Usa médias entre o saldo do ano anterior e do ano atual.
+# Prazos calculados em 360 dias.
+# ============================================================
+
+def calcular_atividade(dic_atual, dic_anterior):
+    # Médias (saldo inicial + saldo final) / 2
+    estoque_medio = (dic_anterior['estoque'] + dic_atual['estoque']) / 2
+    cr_medio = (dic_anterior['contas_receber'] + dic_atual['contas_receber']) / 2
+    forn_medio = (dic_anterior['fornecedores'] + dic_atual['fornecedores']) / 2
+
+    cmv = dic_atual['cmv']
+    receita = dic_atual['receita_liquida']
+
+    # Compras = CMV + (Estoque Final - Estoque Inicial)
+    compras = cmv + (dic_atual['estoque'] - dic_anterior['estoque'])
+
+    # Prazos médios (× 360)
+    pme = (estoque_medio / cmv) * 360
+    giro_estoque = 360 / pme
+    pmrv = (cr_medio / receita) * 360
+    pmpf = (forn_medio / compras) * 360
+
+    # Ciclos
+    co = pme + pmrv      # Ciclo Operacional
+    cf = co - pmpf       # Ciclo Financeiro
+    ciclo_economico = pme
+
+    # Decomposição do Ativo e Passivo Circulante
+    acf = dic_atual['caixa_equivalentes']                  # ACF
+    aco = dic_atual['ativo_circ'] - acf                    # ACO
+    ac = dic_atual['ativo_circ']                           # AC
+    pcf = dic_atual['divida_cp']                           # PCF
+    pco = dic_atual['passivo_circ'] - pcf                  # PCO
+    pc = dic_atual['passivo_circ']                         # PC
+
+    st = acf - pcf       # Saldo de Tesouraria
+    ncg = aco - pco      # Necessidade de Capital de Giro
+    cgl = ac - pc        # Capital de Giro Líquido (= CCL)
+
+    return {
+        'pme': pme,
+        'giro_estoque': giro_estoque,
+        'pmrv': pmrv,
+        'compras': compras,
+        'pmpf': pmpf,
+        'co': co,
+        'cf': cf,
+        'ciclo_economico': ciclo_economico,
+        'acf': acf,
+        'aco': aco,
+        'ac': ac,
+        'pcf': pcf,
+        'pco': pco,
+        'pc': pc,
+        'st': st,
+        'ncg': ncg,
+        'cgl': cgl,
+    }
+
+ativ_2024 = calcular_atividade(dic_2024, dic_2023)
+ativ_2025 = calcular_atividade(dic_2025, dic_2024)
+
+imprimir_tabela('SEÇÃO 2 — INDICADORES DE ATIVIDADE E CICLOS', ativ_2025, ativ_2024, {
+    'pme': ('PME (dias)', 'dec4'),
+    'giro_estoque': ('Giro de Estoque (360/PME)', 'dec4'),
+    'pmrv': ('PMRV (dias)', 'dec4'),
+    'compras': ('Compras', 'cur'),
+    'pmpf': ('PMPF (dias)', 'dec4'),
+    'co': ('Ciclo Operacional (PME+PMRV)', 'dec4'),
+    'cf': ('Ciclo Financeiro (CO-PMPF)', 'dec4'),
+    'ciclo_economico': ('Ciclo Econômico (= PME)', 'dec4'),
+    'acf': ('Ativo Circulante Financeiro (ACF)', 'cur'),
+    'aco': ('Ativo Circulante Operacional (ACO)', 'cur'),
+    'ac': ('Ativo Circulante (AC)', 'cur'),
+    'pcf': ('Passivo Circulante Financeiro (PCF)', 'cur'),
+    'pco': ('Passivo Circulante Operacional (PCO)', 'cur'),
+    'pc': ('Passivo Circulante (PC)', 'cur'),
+    'st': ('Saldo em Tesouraria (ACF-PCF)', 'cur'),
+    'ncg': ('Necessidade de Capital de Giro', 'cur'),
+    'cgl': ('Capital de Giro Líquido (AC-PC)', 'cur'),
+})
+
+
+# ============================================================
+# SEÇÃO 3 — ESTRUTURA DE CAPITAL (BÁSICA)
+# Imobilização do PL usa Ativos Fixos = Imobilizado + Intangível
+# ============================================================
+
+def calcular_estrutura_capital(dic):
+    passivo_total = dic['passivo_total']
+    passivo_circ = dic['passivo_circ']
+    pl = dic['pl']
+    ativo_total = dic['ativo_total']
+
+    # Ativos Fixos (definição do PDF): Imobilizado + Intangível
+    ativos_fixos = dic['imobilizado'] + dic['intangivel']
+
+    relacao_capitais = passivo_total / pl
+    endividamento_geral = passivo_total / (passivo_total + pl)
+    solvencia_geral = ativo_total / passivo_total
+    composicao_endividamento = passivo_circ / passivo_total
+    imobilizacao_pl = ativos_fixos / pl
+
+    return {
+        'relacao_capitais': relacao_capitais,
+        'endividamento_geral': endividamento_geral,
+        'solvencia_geral': solvencia_geral,
+        'composicao_endividamento': composicao_endividamento,
+        'imobilizacao_pl': imobilizacao_pl,
+    }
+
+estr_2024 = calcular_estrutura_capital(dic_2024)
+estr_2025 = calcular_estrutura_capital(dic_2025)
+
+imprimir_tabela('SEÇÃO 3 — ESTRUTURA DE CAPITAL', estr_2025, estr_2024, {
+    'relacao_capitais': ('Relação de Capitais (Passivo/PL)', 'dec4'),
+    'endividamento_geral': ('Endividamento Geral (Passivo/Ativo)', 'dec4'),
+    'solvencia_geral': ('Solvência Geral (Ativo/Passivo)', 'dec4'),
+    'composicao_endividamento': ('Composição Endiv. (PC/Passivo)', 'dec4'),
+    'imobilizacao_pl': ('Imobilização do PL (AtFixos/PL)', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 4 — ESTRUTURA DE CAPITAL (COMPLEMENTAR)
+# ============================================================
+
+def calcular_estrutura_complementar(dic):
+    # Passivo Oneroso = Empréstimos/Financiamentos (CP + LP)
+    passivo_oneroso = dic['divida_cp'] + dic['divida_lp']
+    # Dívida Líquida = PO - Caixa/Equivalentes
+    divida_liquida = passivo_oneroso - dic['caixa_equivalentes']
+    # Investimento = PO + PL
+    investimento = passivo_oneroso + dic['pl']
+    # Capital Oneroso = DL + PL
+    capital_oneroso = divida_liquida + dic['pl']
+
+    dl_sobre_pl = divida_liquida / dic['pl']
+    dl_sobre_co = divida_liquida / capital_oneroso
+
+    return {
+        'passivo_oneroso': passivo_oneroso,
+        'divida_liquida': divida_liquida,
+        'investimento': investimento,
+        'capital_oneroso': capital_oneroso,
+        'dl_sobre_pl': dl_sobre_pl,
+        'dl_sobre_co': dl_sobre_co,
+    }
+
+ec_2024 = calcular_estrutura_complementar(dic_2024)
+ec_2025 = calcular_estrutura_complementar(dic_2025)
+
+imprimir_tabela('SEÇÃO 4 — ESTRUTURA DE CAPITAL (COMPLEMENTAR)', ec_2025, ec_2024, {
+    'passivo_oneroso': ('Passivo Oneroso (PO = EmprCP+EmprLP)', 'cur'),
+    'divida_liquida': ('Dívida Líquida (DL = PO - Caixa)', 'cur'),
+    'investimento': ('Investimento (INV = PO + PL)', 'cur'),
+    'capital_oneroso': ('Capital Oneroso (CO = DL + PL)', 'cur'),
+    'dl_sobre_pl': ('Relação DL/PL', 'dec4'),
+    'dl_sobre_co': ('Relação DL/CO', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 5 — CUSTO DO CAPITAL (CMPC / WACC)
+# ============================================================
+
+def calcular_custo_capital(dic, ec, aliquota, ke):
+    po = ec['passivo_oneroso']
+    inv = ec['investimento']
+    pl = dic['pl']
+    df_bruta = dic['despesa_financeira']
+    ir_corrente = dic['ir_corrente']
+    lair = dic['lair']
+
+    wi = po / inv                                      # % da Dívida no INV
+    we = pl / inv                                      # % do Equity no INV
+    aliq_efetiva = ir_corrente / lair if lair != 0 else 0
+    bt = df_bruta * aliquota                           # Benefício Tributário (alíq. estatutária)
+    dfl = df_bruta - bt                                # Despesa Financeira Líquida
+    ki = df_bruta / po                                 # Custo da Dívida (bruto)
+    ki_apos = ki * (1 - aliquota)                      # Ki após impostos
+    wacc = wi * ki_apos + we * ke                      # CMPC
+
+    return {
+        'wi': wi,
+        'we': we,
+        'aliq_efetiva': aliq_efetiva,
+        'df_bruta': df_bruta,
+        'bt': bt,
+        'dfl': dfl,
+        'ki': ki,
+        'ki_apos': ki_apos,
+        'wacc': wacc,
+    }
+
+cc_2024 = calcular_custo_capital(dic_2024, ec_2024, aliquota_estatutaria, ke)
+cc_2025 = calcular_custo_capital(dic_2025, ec_2025, aliquota_estatutaria, ke)
+
+imprimir_tabela('SEÇÃO 5 — CUSTO DO CAPITAL', cc_2025, cc_2024, {
+    'wi': ('% Dívida no Investimento (Wi)', 'dec4'),
+    'we': ('% Equity no Investimento (We)', 'dec4'),
+    'aliq_efetiva': ('Alíquota Efetiva IR/CSLL', 'dec4'),
+    'df_bruta': ('Despesa Financeira Bruta (DF)', 'cur'),
+    'bt': ('Benefício Tributário (DF × alíq IR)', 'cur2'),
+    'dfl': ('Despesa Financeira Líquida (DFL)', 'cur2'),
+    'ki': ('Custo da Dívida — Ki (DF/PO)', 'dec4'),
+    'ki_apos': ('Ki após impostos', 'dec4'),
+    'wacc': ('CMPC / WACC', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 6 — LUCRATIVIDADE E RENTABILIDADE
+# ROE usa PL atual, ROI usa INV atual (não médios)
+# ============================================================
+
+def calcular_lucratividade(dic, ec):
+    receita = dic['receita_liquida']
+
+    margem_bruta = dic['lucro_bruto'] / receita
+    ebitda = dic['ebitda']
+    margem_ebitda = ebitda / receita
+    ebit = dic['ebit']
+    margem_ebit = ebit / receita
+    nopat = dic['nopat']
+    margem_nopat = nopat / receita
+    margem_liquida = dic['lucro_liquido'] / receita
+
+    roi = nopat / ec['investimento']
+    roe = dic['lucro_liquido'] / dic['pl']
+    gaf = roe / roi if roi != 0 else 0       # Grau de Alavancagem Financeira
+
+    return {
+        'margem_bruta': margem_bruta,
+        'ebitda': ebitda,
+        'margem_ebitda': margem_ebitda,
+        'ebit': ebit,
+        'margem_ebit': margem_ebit,
+        'nopat': nopat,
+        'margem_nopat': margem_nopat,
+        'margem_liquida': margem_liquida,
+        'roi': roi,
+        'roe': roe,
+        'gaf': gaf,
+    }
+
+lucr_2024 = calcular_lucratividade(dic_2024, ec_2024)
+lucr_2025 = calcular_lucratividade(dic_2025, ec_2025)
+
+imprimir_tabela('SEÇÃO 6 — LUCRATIVIDADE E RENTABILIDADE', lucr_2025, lucr_2024, {
+    'margem_bruta': ('Margem Bruta (LB/RL)', 'dec4'),
+    'ebitda': ('EBITDA (EBIT + D&A)', 'cur'),
+    'margem_ebitda': ('Margem EBITDA', 'dec4'),
+    'ebit': ('EBIT (Lucro Operacional)', 'cur'),
+    'margem_ebit': ('Margem EBIT', 'dec4'),
+    'nopat': ('NOPAT (EBIT - IR Corrente)', 'cur'),
+    'margem_nopat': ('Margem NOPAT', 'dec4'),
+    'margem_liquida': ('Margem Líquida (LL/RL)', 'dec4'),
+    'roi': ('ROI (NOPAT/INV)', 'dec4'),
+    'roe': ('ROE (LL/PL)', 'dec4'),
+    'gaf': ('GAF (ROE/ROI)', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 7 — VALOR AGREGADO (EVA)
+# ============================================================
+
+def calcular_valor_agregado(ec, lucr, cc):
+    roi = lucr['roi']
+    wacc = cc['wacc']
+    inv = ec['investimento']
+
+    eva = (roi - wacc) * inv                  # Valor Econômico Adicionado
+    rroi = roi - wacc                         # ROI Residual
+    goodwill = eva / wacc if wacc != 0 else 0
+
+    return {
+        'eva': eva,
+        'rroi': rroi,
+        'goodwill': goodwill,
+    }
+
+va_2024 = calcular_valor_agregado(ec_2024, lucr_2024, cc_2024)
+va_2025 = calcular_valor_agregado(ec_2025, lucr_2025, cc_2025)
+
+imprimir_tabela('SEÇÃO 7 — VALOR AGREGADO (EVA)', va_2025, va_2024, {
+    'eva': ('EVA = (ROI - CMPC) x INV', 'cur2'),
+    'rroi': ('ROI Residual (RROI = ROI - CMPC)', 'dec4'),
+    'goodwill': ('Goodwill (EVA / CMPC)', 'cur2'),
+})
+
+
+# ============================================================
+# SEÇÃO 8 — MÚLTIPLOS DE MERCADO (apenas 2025)
+# Valores em milhares de R$ convertidos para R$ (× 1000)
+# ============================================================
+
+def calcular_multiplos(dic, lucr, ec, n_acoes, preco_atual, preco_inicio, dpa):
+    # Converter valores contábeis para R$ unitários
+    pl_R = dic['pl'] * 1000
+    ll_R = dic['lucro_liquido'] * 1000
+    receita_R = dic['receita_liquida'] * 1000
+    ebitda_R = lucr['ebitda'] * 1000
+    dl_R = ec['divida_liquida'] * 1000
+
+    vpa = pl_R / n_acoes
+    pvp = preco_atual / vpa
+    lpa = ll_R / n_acoes
+    pl_ratio = preco_atual / lpa
+    market_cap = n_acoes * preco_atual
+    price_to_book = market_cap / pl_R
+    dtp = dpa * n_acoes
+    dy = dpa / preco_atual
+    payout = dpa / lpa
+    delta_preco = preco_atual - preco_inicio
+    retorno_capital = delta_preco / preco_inicio
+    tra = (dpa + delta_preco) / preco_inicio
+    ev = market_cap + dl_R
+    ev_ebitda = ev / ebitda_R
+    ev_receita = ev / receita_R
+    earning_yield = ebitda_R / ev
+
+    return {
+        'n_acoes': n_acoes,
+        'vpa': vpa,
+        'preco_atual': preco_atual,
+        'pvp': pvp,
+        'lpa': lpa,
+        'pl_ratio': pl_ratio,
+        'market_cap': market_cap,
+        'price_to_book': price_to_book,
+        'dpa': dpa,
+        'dtp': dtp,
+        'dy': dy,
+        'payout': payout,
+        'delta_preco': delta_preco,
+        'retorno_capital': retorno_capital,
+        'tra': tra,
+        'ev': ev,
+        'ev_ebitda': ev_ebitda,
+        'ev_receita': ev_receita,
+        'earning_yield': earning_yield,
+    }
+
+mult_2025 = calcular_multiplos(dic_2025, lucr_2025, ec_2025, n_acoes, preco_atual, preco_inicio, dpa)
+
+imprimir_tabela_unica('SEÇÃO 8 — MÚLTIPLOS DE MERCADO', mult_2025, {
+    'n_acoes': ('Nº de ações (ON + PN)', 'cur'),
+    'vpa': ('VPA (PL / Nº ações)', 'dec4'),
+    'preco_atual': ('Preço atual da ação (R$)', 'dec4'),
+    'pvp': ('P/VP (Preço / VPA)', 'dec4'),
+    'lpa': ('LPA (LL / Nº ações)', 'dec4'),
+    'pl_ratio': ('P/L (Preço / LPA)', 'dec4'),
+    'market_cap': ('Market Cap (Nº ações × Preço)', 'cur2'),
+    'price_to_book': ('Price to Book (Market Cap / PL)', 'dec4'),
+    'dpa': ('DPA (R$)', 'dec4'),
+    'dtp': ('Dividendos Totais Pagos (DTP)', 'cur2'),
+    'dy': ('Dividend Yield (DPA / Preço)', 'dec4'),
+    'payout': ('Payout (DPA / LPA)', 'dec4'),
+    'delta_preco': ('Delta Preco (Atual - Inicio)', 'dec4'),
+    'retorno_capital': ('Retorno c/ Ganho de Capital', 'dec4'),
+    'tra': ('Taxa de Retorno Total (TRA)', 'dec4'),
+    'ev': ('Enterprise Value (EV)', 'cur2'),
+    'ev_ebitda': ('EV / EBITDA', 'dec4'),
+    'ev_receita': ('EV / Receita', 'dec4'),
+    'earning_yield': ('Earning Yield (EBITDA / EV)', 'dec4'),
+})
+
+
+# ============================================================
+# SEÇÃO 9 — DRE RESUMIDA (Comparativo 3 anos)
+# ============================================================
+
+def calcular_dre_resumida(dic):
+    return {
+        'receita_liquida': dic['receita_liquida'],
+        'lucro_bruto': dic['lucro_bruto'],
+        'ebitda': dic['ebitda'],
+        'ebit': dic['ebit'],
+        'nopat': dic['nopat'],
+        'lucro_liquido': dic['lucro_liquido'],
+    }
+
+dre_2023 = calcular_dre_resumida(dic_2023)
+dre_2024 = calcular_dre_resumida(dic_2024)
+dre_2025 = calcular_dre_resumida(dic_2025)
+
+nomes_dre = {
+    'receita_liquida': 'Receita Líquida',
+    'lucro_bruto': 'Lucro Bruto',
+    'ebitda': 'EBITDA',
+    'ebit': 'EBIT',
+    'nopat': 'NOPAT',
+    'lucro_liquido': 'Lucro Líquido',
+}
+
+print(f"\n{'='*82}")
+print(f"  SEÇÃO 9 — DRE RESUMIDA (Comparativo 3 anos)")
+print(f"{'='*82}")
+print(f"{'Linha':<25} {'2025':>14} {'2024':>14} {'2023':>14} {'Var 25/24':>10}")
+print("-" * 82)
+for chave, nome in nomes_dre.items():
+    v25 = dre_2025[chave]
+    v24 = dre_2024[chave]
+    v23 = dre_2023[chave]
+    var = ((v25 - v24) / abs(v24) * 100) if v24 != 0 else None
+    var_str = f"{var:+.1f}%" if var is not None else "—"
+    print(f"{nome:<25} {v25:>14,.0f} {v24:>14,.0f} {v23:>14,.0f} {var_str:>10}")
