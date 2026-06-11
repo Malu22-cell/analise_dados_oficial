@@ -174,7 +174,7 @@ dic_2025 = encontrar_contas_contabeis(df_2025)
 
 # ============================================================
 # DADOS DE MERCADO (Pegados por sites externos)
-#Puxar esses dados de mercados da planilha de cada um
+#Puxar esses dados de mercados da planilha de cada um (O que já está selecionado é o da alpargata)
 # ============================================================
 n_acoes = 683_062_222
 preco_atual = 10.55
